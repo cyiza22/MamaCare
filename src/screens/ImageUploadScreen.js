@@ -1,5 +1,3 @@
-// src/screens/ImageUploadScreen.js
-
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Image, ScrollView,
@@ -9,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, FONTS, SIZES, SHADOWS } from '../theme';
 import PinkButton from '../components/PinkButton';
-import { uploadUltrasound } from '../services/api';
+import { uploadUltrasound } from '../services/api'; 
 
 const ImageUploadScreen = ({ navigation }) => {
   const [image, setImage] = useState(null);

@@ -3,8 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const HISTORY_KEY = 'mamacare_screening_history';
 const CHAT_CACHE_KEY = 'mamacare_chat_cache';
 
-// ── Screening History Cache ──
-
+// Screening History Cache
 export const cacheScreening = async (result, type = 'questionnaire') => {
   try {
     const existing = await getCachedHistory();
@@ -44,8 +43,7 @@ export const mergeHistory = async (serverData) => {
   }
 };
 
-// ── Chat Response Cache ──
-
+// Chat Response Cache
 export const getCachedChatResponse = async (message) => {
   try {
     const data = await AsyncStorage.getItem(CHAT_CACHE_KEY);
@@ -72,8 +70,7 @@ export const cacheChatResponse = async (message, response) => {
   }
 };
 
-// ── General Cache Clear ──
-
+// General Cache Clear
 export const clearCache = async () => {
   try {
     await AsyncStorage.multiRemove([HISTORY_KEY, CHAT_CACHE_KEY]);

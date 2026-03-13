@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// const BASE_URL = 'http://10.0.2.2:8000/api';
-// const BASE_URL = 'http://localhost:8000/api';
+// const BASE_URL = 'http://10.0.2.2:8000/api'; // Android emulator
+// const BASE_URL = 'http://localhost:8000/api'; // iOS simulator
 const BASE_URL = 'https://courageous-illumination-production-1258.up.railway.app/api';
 
 // Create axios instance
@@ -26,8 +26,7 @@ export const clearToken = () => {
   delete api.defaults.headers.common['Authorization'];
 };
 
-//AUTH
-
+// AUTH
 export const signup = async (name, email, password) => {
   const res = await api.post('/signup', {
     name,
@@ -45,22 +44,49 @@ export const login = async (email, password) => {
   return res.data;
 };
 
-//SCREENING (Questionnaire) 
-
+// SCREENING (Questionnaire)
 export const submitScreening = async (answers) => {
   const res = await api.post('/screen', answers);
   return res.data;
 };
 
-//CHAT ASSISTANT 
-
+// CHAT ASSISTANT
+// CHAT ASSISTANT 
 export const sendMessage = async (message) => {
-  const res = await api.post('/assist', { message });
-  return res.data;
+  console.log('📤 Sending to /assist:', { message });
+  
+  // Log the full request details
+  console.log('Request config:', {
+    url: `${api.defaults.baseURL}/assist`,
+    method: 'POST',
+    headers: api.defaults.headers,
+    data: { message }
+  });
+  
+  try {
+    const res = await api.post('/assist', { message });
+    console.log('✅ Response:', res.data);
+    return res.data;
+  } catch (error) {
+    console.error('❌ Full error:', {
+      message: error.message,
+      response: {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers
+      },
+      request: {
+        method: error.config?.method,
+        url: error.config?.url,
+        data: error.config?.data
+      }
+    });
+    throw error;
+  }
 };
 
-//SCREENING HISTORY 
-
+// SCREENING HISTORY
 export const getHistory = async () => {
   const res = await api.get('/screenings');
   return res.data;
@@ -76,28 +102,16 @@ export const clearHistory = async () => {
   return res.data;
 };
 
-// ─── IMAGE PREDICTION (Ultrasound) ──────────────
-// export const uploadUltrasound = async (imageUri) => {
-//   const formData = new FormData();
-//   formData.append('image', {
-//     uri: imageUri,
-//     type: 'image/jpeg',
-//     name: 'ultrasound.jpg',
-//   });
-
-//   const res = await api.post('/predict', formData, {
-//     headers: { 'Content-Type': 'multipart/form-data' },
-//   });
-//   return res.data;
-// };
-
+// IMAGE PREDICTION (Ultrasound)
 export const uploadUltrasound = async (imageUri) => {
   const formData = new FormData();
-
-  // Web: fetch the image and create a proper Blob
-  const response = await fetch(imageUri);
-  const blob = await response.blob();
-  formData.append('image', blob, 'ultrasound.jpg');
+  
+  // For React Native, use this format:
+  formData.append('image', {
+    uri: imageUri,
+    type: 'image/jpeg',
+    name: 'ultrasound.jpg',
+  });
 
   const res = await api.post('/predict', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

@@ -5,7 +5,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { COLORS, FONTS, SIZES } from '../theme';
-import { sendMessage } from '../services/api';
+import { sendMessage } from '../services/api'; // Fixed import path
 
 const QUICK_TOPICS = [
   { label: '🔍 Self-exam', msg: 'How do I do a self-exam?' },
@@ -37,7 +37,10 @@ const ChatScreen = () => {
     setLoading(true);
 
     try {
+      console.log('📤 Sending message:', text.trim());
       const res = await sendMessage(text.trim());
+      console.log('✅ Response:', res);
+      
       const botMsg = {
         id: (Date.now() + 1).toString(),
         text: res.response || res.message || "I'm not sure how to help with that. Try asking about self-exams, symptoms, risk factors, screening, or treatment.",
@@ -45,11 +48,27 @@ const ChatScreen = () => {
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch (err) {
+      console.error('❌ Error:', err);
+      
+      let errorText = '😔 Sorry, I could not connect to the server. Please check your connection and try again.';
+      
+      if (err.response) {
+        if (err.response.status === 405) {
+          errorText = '😔 Server error: API method not allowed. Please update the app.';
+        } else if (err.response.status === 500) {
+          errorText = '😔 Server error. Please try again later.';
+        } else if (err.response.status === 401) {
+          errorText = '😔 Please log in again to continue.';
+        }
+      } else if (err.request) {
+        errorText = '😔 No response from server. Check your internet connection.';
+      }
+      
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
-          text: '😔 Sorry, I could not connect to the server. Please check your connection and try again.',
+          text: errorText,
           from: 'bot',
         },
       ]);
@@ -85,8 +104,8 @@ const ChatScreen = () => {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Messages */}
         <FlatList
@@ -96,6 +115,7 @@ const ChatScreen = () => {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.messagesList}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
           ListFooterComponent={
             loading ? (
               <View style={styles.typingRow}>
@@ -167,17 +187,30 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.gray100,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   headerEmoji: { fontSize: 32 },
   headerTitle: {
     fontSize: SIZES.subtitle,
-    ...FONTS.bold,
+    fontFamily: 'Inter-Bold',
+    fontWeight: '700',
     color: COLORS.dark,
   },
   headerSub: {
     fontSize: SIZES.tiny,
     color: COLORS.gray500,
-    ...FONTS.medium,
+    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
   },
   // Messages
   messagesList: {
@@ -202,11 +235,17 @@ const styles = StyleSheet.create({
   botBubble: {
     backgroundColor: COLORS.white,
     borderBottomLeftRadius: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
   userBubble: {
     backgroundColor: COLORS.pink,
@@ -215,7 +254,8 @@ const styles = StyleSheet.create({
   msgText: {
     fontSize: SIZES.body,
     color: COLORS.dark,
-    ...FONTS.regular,
+    fontFamily: 'Inter-Regular',
+    fontWeight: '400',
     lineHeight: 22,
   },
   userText: { color: COLORS.white },
@@ -237,7 +277,8 @@ const styles = StyleSheet.create({
   typingText: {
     color: COLORS.gray500,
     fontSize: SIZES.small,
-    ...FONTS.medium,
+    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
   },
   // Quick topics
   quickContainer: {
@@ -260,7 +301,8 @@ const styles = StyleSheet.create({
   quickText: {
     fontSize: SIZES.small,
     color: COLORS.pinkDark,
-    ...FONTS.medium,
+    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
   },
   // Input
   inputRow: {
@@ -292,6 +334,17 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.pink,
     justifyContent: 'center',
     alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.pink,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   sendBtnDisabled: { opacity: 0.4 },
   sendText: { fontSize: 20 },

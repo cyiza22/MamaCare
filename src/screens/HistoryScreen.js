@@ -6,8 +6,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import RiskBadge from '../components/RiskBadge';
 import { COLORS, FONTS, SIZES, SHADOWS } from '../theme';
-import { getHistory, deleteScreening, clearHistory } from '../services/api';
-import { getCachedHistory, mergeHistory, clearCache } from '../services/cache';
+import { getHistory, deleteScreening, clearHistory } from '../services/api'; 
+import { getCachedHistory, mergeHistory, clearCache } from '../services/cache'; 
 
 const HistoryScreen = () => {
   const [screenings, setScreenings] = useState([]);
