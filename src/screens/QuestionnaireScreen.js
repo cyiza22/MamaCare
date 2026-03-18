@@ -16,6 +16,7 @@ const QUESTIONS = [
     question: 'What is your age?',
     type: 'number',
     emoji: '🎂',
+    hint: 'Must be between 18 and 100',
   },
   {
     key: 'family_history',
@@ -34,6 +35,7 @@ const QUESTIONS = [
     question: 'At what age did you have your first period?',
     type: 'number',
     emoji: '📅',
+    hint: 'Must be between 8 and 20',
   },
   {
     key: 'age_first_birth',
@@ -84,19 +86,54 @@ const QuestionnaireScreen = ({ navigation }) => {
   const [answers, setAnswers] = useState({});
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [errors, setErrors] = useState({});
 
   const current = QUESTIONS[step];
   const progress = (step + 1) / QUESTIONS.length;
+  const currentError = errors[current.key];
 
   const setAnswer = (value) => {
     setAnswers({ ...answers, [current.key]: value });
+    // Clear error for this field when user starts typing/selecting
+    if (errors[current.key]) {
+      setErrors({ ...errors, [current.key]: null });
+    }
+  };
+
+  const validateCurrentQuestion = () => {
+    const value = answers[current.key];
+    
+    // Check if answered
+    if (value === undefined || value === '') {
+      setErrors({ ...errors, [current.key]: 'Please answer this question 💕' });
+      return false;
+    }
+
+    // Number validations
+    if (current.type === 'number') {
+      const num = parseInt(value);
+      if (isNaN(num)) {
+        setErrors({ ...errors, [current.key]: 'Please enter a valid number' });
+        return false;
+      }
+      
+      if (current.key === 'age' && (num < 18 || num > 100)) {
+        setErrors({ ...errors, [current.key]: 'Age must be between 18 and 100' });
+        return false;
+      }
+      
+      if (current.key === 'age_first_period' && (num < 8 || num > 20)) {
+        setErrors({ ...errors, [current.key]: 'Age of first period must be between 8 and 20' });
+        return false;
+      }
+    }
+
+    return true;
   };
 
   const goNext = () => {
-    if (answers[current.key] === undefined || answers[current.key] === '') {
-      Alert.alert('Please answer', 'Select or enter an answer to continue 💕');
-      return;
-    }
+    if (!validateCurrentQuestion()) return;
+
     if (step < QUESTIONS.length - 1) {
       setStep(step + 1);
     } else {
@@ -105,7 +142,10 @@ const QuestionnaireScreen = ({ navigation }) => {
   };
 
   const goBack = () => {
-    if (step > 0) setStep(step - 1);
+    if (step > 0) {
+      setStep(step - 1);
+      setErrors({});
+    }
   };
 
   const handleSubmit = async () => {
@@ -116,11 +156,32 @@ const QuestionnaireScreen = ({ navigation }) => {
         age: parseInt(answers.age),
         age_first_period: parseInt(answers.age_first_period),
       };
+      console.log('📤 Submitting screening:', payload);
       const res = await submitScreening(payload);
+      console.log('✅ Response:', res);
       setResult(res);
     } catch (err) {
-      const msg = err.response?.data?.message || 'Screening failed. Please try again.';
-      Alert.alert('Error', msg);
+      console.error('❌ Submission error:', err);
+      
+      // Handle validation errors from backend
+      if (err.response?.status === 422) {
+        const backendErrors = err.response.data?.errors || {};
+        console.log('Backend validation errors:', backendErrors);
+        
+        // Show all validation errors in an alert
+        const errorMessages = Object.entries(backendErrors)
+          .map(([field, messages]) => messages[0])
+          .join('\n\n');
+        
+        Alert.alert(
+          'Validation Error',
+          errorMessages || 'Please check your answers and try again.',
+          [{ text: 'OK', onPress: () => setErrors(backendErrors) }]
+        );
+      } else {
+        const msg = err.response?.data?.message || 'Assessment failed. Please try again.';
+        Alert.alert('Error', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -198,10 +259,25 @@ const QuestionnaireScreen = ({ navigation }) => {
         <Text style={styles.questionEmoji}>{current.emoji}</Text>
         <Text style={styles.questionText}>{current.question}</Text>
 
+        {/* Error message */}
+        {currentError && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorIcon}>⚠️</Text>
+            <Text style={styles.errorMessage}>{currentError}</Text>
+          </View>
+        )}
+
+        {/* Hint */}
+        {current.hint && !currentError && (
+          <View style={styles.hintBox}>
+            <Text style={styles.hintText}>💡 {current.hint}</Text>
+          </View>
+        )}
+
         {/* Number input */}
         {current.type === 'number' && (
           <TextInput
-            style={styles.numberInput}
+            style={[styles.numberInput, currentError && styles.numberInputError]}
             placeholder="Enter a number"
             placeholderTextColor={COLORS.gray400}
             keyboardType="number-pad"
@@ -327,8 +403,44 @@ const styles = StyleSheet.create({
     ...FONTS.bold,
     color: COLORS.dark,
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
     lineHeight: 30,
+  },
+  // Error box
+  errorBox: {
+    width: '100%',
+    backgroundColor: '#FFEBEE',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#EF5350',
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  errorIcon: { fontSize: 18, marginTop: 1 },
+  errorMessage: {
+    flex: 1,
+    fontSize: SIZES.small,
+    color: '#C62828',
+    ...FONTS.semibold,
+    lineHeight: 18,
+  },
+  // Hint box
+  hintBox: {
+    width: '100%',
+    backgroundColor: '#E3F2FD',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#1976D2',
+  },
+  hintText: {
+    fontSize: SIZES.small,
+    color: '#0D47A1',
+    ...FONTS.medium,
   },
   // Number input
   numberInput: {
@@ -343,6 +455,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.pinkLight,
     ...SHADOWS.small,
+  },
+  numberInputError: {
+    borderColor: '#EF5350',
+    backgroundColor: '#FFF5F5',
   },
   // Yes/No
   yesnoRow: {

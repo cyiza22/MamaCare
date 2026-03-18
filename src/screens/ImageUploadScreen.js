@@ -7,12 +7,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, FONTS, SIZES, SHADOWS } from '../theme';
 import PinkButton from '../components/PinkButton';
-import { uploadUltrasound } from '../services/api'; 
+import { uploadUltrasound } from '../services/api';
+import { cacheScreening } from '../services/cache';
 
 const ImageUploadScreen = ({ navigation }) => {
   const [image, setImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [debugInfo, setDebugInfo] = useState('');
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -28,8 +30,16 @@ const ImageUploadScreen = ({ navigation }) => {
     });
 
     if (!picked.canceled) {
-      setImage(picked.assets[0]);
+      const asset = picked.assets[0];
+      console.log('✅ Image picked:', {
+        uri: asset.uri,
+        width: asset.width,
+        height: asset.height,
+        type: asset.type,
+      });
+      setImage(asset);
       setResult(null);
+      setDebugInfo(`Image: ${asset.width}x${asset.height}`);
     }
   };
 
@@ -46,26 +56,87 @@ const ImageUploadScreen = ({ navigation }) => {
     });
 
     if (!picked.canceled) {
-      setImage(picked.assets[0]);
+      const asset = picked.assets[0];
+      console.log('✅ Photo taken:', {
+        uri: asset.uri,
+        width: asset.width,
+        height: asset.height,
+      });
+      setImage(asset);
       setResult(null);
+      setDebugInfo(`Photo: ${asset.width}x${asset.height}`);
     }
   };
 
   const handleUpload = async () => {
     if (!image) return;
+    
     setLoading(true);
+    setDebugInfo('Uploading...');
+    
     try {
+      console.log('🚀 Starting upload...');
+      setDebugInfo('Uploading to server...');
+      
       const res = await uploadUltrasound(image.uri);
-      setResult(res);
+      
+      console.log('✅ Upload response:', res);
+      setDebugInfo('Upload successful!');
+      
+      // Normalize the response
+      const normalizedResult = {
+        label: res.label || 'unknown',
+        confidence: res.confidence || 0,
+        probabilities: res.probabilities || {
+          benign: 0,
+          malignant: 0,
+          normal: 0,
+        },
+        class: res.class,
+      };
+      
+      console.log('📦 Normalized result:', normalizedResult);
+      
+      // Cache the result locally
+      await cacheScreening(normalizedResult, 'image');
+      
+      setResult(normalizedResult);
+      setDebugInfo('Done!');
     } catch (err) {
-      Alert.alert('Upload Failed', 'Could not connect to the server. Please try again.');
+      console.error('❌ Upload failed:', err);
+      
+      const errorMsg = err.response?.data?.message || 
+                       err.response?.data?.error ||
+                       err.message || 
+                       'Unknown error';
+      
+      setDebugInfo(`Error: ${errorMsg}`);
+      
+      let displayMsg = 'Upload failed. Please try again.';
+      
+      if (err.response?.status === 413) {
+        displayMsg = 'Image is too large. Please choose a smaller image.';
+      } else if (err.response?.status === 422) {
+        const errors = err.response.data?.errors;
+        if (errors?.image) {
+          displayMsg = errors.image[0];
+        } else {
+          displayMsg = 'Validation error. Please check your image.';
+        }
+      } else if (err.response?.status === 500) {
+        displayMsg = 'Server error. Please try again later.';
+      } else if (err.message?.includes('timeout')) {
+        displayMsg = 'Upload timed out. Please check your connection.';
+      }
+      
+      Alert.alert('Upload Failed', displayMsg);
     } finally {
       setLoading(false);
     }
   };
 
   const getLabelColor = (label) => {
-    switch (label) {
+    switch (label?.toLowerCase()) {
       case 'malignant': return '#E53E3E';
       case 'benign': return '#38A169';
       case 'normal': return '#3182CE';
@@ -74,7 +145,7 @@ const ImageUploadScreen = ({ navigation }) => {
   };
 
   const getLabelEmoji = (label) => {
-    switch (label) {
+    switch (label?.toLowerCase()) {
       case 'malignant': return '🔴';
       case 'benign': return '🟢';
       case 'normal': return '🔵';
@@ -96,6 +167,13 @@ const ImageUploadScreen = ({ navigation }) => {
       </LinearGradient>
 
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+
+        {/* Debug info */}
+        {debugInfo && (
+          <View style={styles.debugBox}>
+            <Text style={styles.debugText}>📝 {debugInfo}</Text>
+          </View>
+        )}
 
         {/* Image Preview */}
         <View style={styles.imageSection}>
@@ -125,7 +203,7 @@ const ImageUploadScreen = ({ navigation }) => {
         {/* Upload button */}
         {image && !result && (
           <PinkButton
-            title={loading ? 'Analyzing...' : 'Analyze Image'}
+            title={loading ? 'Uploading...' : 'Analyze Image'}
             onPress={handleUpload}
             disabled={loading}
             style={styles.uploadBtn}
@@ -135,7 +213,7 @@ const ImageUploadScreen = ({ navigation }) => {
         {loading && (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color={COLORS.pink} />
-            <Text style={styles.loadingText}>AI is analyzing your image...</Text>
+            <Text style={styles.loadingText}>Analyzing your image...</Text>
           </View>
         )}
 
@@ -149,10 +227,10 @@ const ImageUploadScreen = ({ navigation }) => {
               <Text style={styles.labelEmoji}>{getLabelEmoji(result.label)}</Text>
               <View>
                 <Text style={[styles.labelText, { color: getLabelColor(result.label) }]}>
-                  {result.label?.toUpperCase()}
+                  {result.label?.toUpperCase() || 'UNKNOWN'}
                 </Text>
                 <Text style={styles.confidenceText}>
-                  {(result.confidence * 100).toFixed(1)}% confidence
+                  {((result.confidence || 0) * 100).toFixed(1)}% confidence
                 </Text>
               </View>
             </View>
@@ -170,11 +248,11 @@ const ImageUploadScreen = ({ navigation }) => {
                       <View
                         style={[
                           styles.probBarFill,
-                          { width: `${val * 100}%`, backgroundColor: getLabelColor(key) },
+                          { width: `${(val || 0) * 100}%`, backgroundColor: getLabelColor(key) },
                         ]}
                       />
                     </View>
-                    <Text style={styles.probVal}>{(val * 100).toFixed(1)}%</Text>
+                    <Text style={styles.probVal}>{((val || 0) * 100).toFixed(1)}%</Text>
                   </View>
                 ))}
               </View>
@@ -192,7 +270,7 @@ const ImageUploadScreen = ({ navigation }) => {
             <PinkButton
               title="Upload Another Image"
               variant="outline"
-              onPress={() => { setImage(null); setResult(null); }}
+              onPress={() => { setImage(null); setResult(null); setDebugInfo(''); }}
               style={styles.tryAgainBtn}
             />
           </View>
@@ -206,7 +284,6 @@ const ImageUploadScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.offWhite },
-  // Header
   header: {
     paddingTop: 56,
     paddingBottom: 24,
@@ -218,10 +295,19 @@ const styles = StyleSheet.create({
   backText: { color: COLORS.white, fontSize: SIZES.body, ...FONTS.medium },
   headerTitle: { fontSize: SIZES.title, color: COLORS.white, ...FONTS.bold },
   headerSub: { fontSize: SIZES.small, color: 'rgba(255,255,255,0.8)', ...FONTS.regular, marginTop: 4 },
-  // Body
+  debugBox: {
+    backgroundColor: '#F0F0F0',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  debugText: {
+    fontSize: SIZES.small,
+    color: COLORS.gray600,
+    ...FONTS.medium,
+  },
   body: { flex: 1 },
   bodyContent: { padding: 20 },
-  // Image section
   imageSection: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
@@ -242,7 +328,6 @@ const styles = StyleSheet.create({
   placeholderEmoji: { fontSize: 48, marginBottom: 8 },
   placeholderText: { fontSize: SIZES.subtitle, color: COLORS.gray600, ...FONTS.semibold },
   placeholderHint: { fontSize: SIZES.small, color: COLORS.gray400, ...FONTS.regular, marginTop: 4 },
-  // Pick buttons
   pickRow: {
     flexDirection: 'row',
     gap: 12,
@@ -259,16 +344,13 @@ const styles = StyleSheet.create({
   },
   pickEmoji: { fontSize: 28 },
   pickLabel: { fontSize: SIZES.small, color: COLORS.gray700, ...FONTS.semibold },
-  // Upload button
   uploadBtn: { marginTop: 20 },
-  // Loading
   loadingBox: {
     alignItems: 'center',
     marginTop: 24,
     gap: 12,
   },
   loadingText: { fontSize: SIZES.body, color: COLORS.gray600, ...FONTS.medium },
-  // Result card
   resultCard: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
@@ -277,7 +359,6 @@ const styles = StyleSheet.create({
     ...SHADOWS.small,
   },
   resultTitle: { fontSize: SIZES.subtitle, ...FONTS.bold, color: COLORS.dark, marginBottom: 16 },
-  // Label badge
   labelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -288,7 +369,6 @@ const styles = StyleSheet.create({
   labelEmoji: { fontSize: 32 },
   labelText: { fontSize: SIZES.title, ...FONTS.bold },
   confidenceText: { fontSize: SIZES.small, color: COLORS.gray600, ...FONTS.medium, marginTop: 2 },
-  // Probabilities
   probSection: { marginTop: 20 },
   probTitle: { fontSize: SIZES.body, ...FONTS.semibold, color: COLORS.gray700, marginBottom: 12 },
   probRow: {
@@ -307,7 +387,6 @@ const styles = StyleSheet.create({
   },
   probBarFill: { height: '100%', borderRadius: 4 },
   probVal: { width: 48, fontSize: SIZES.small, color: COLORS.gray600, ...FONTS.medium, textAlign: 'right' },
-  // Disclaimer
   disclaimer: {
     backgroundColor: '#FFFBEB',
     borderRadius: 12,
@@ -315,7 +394,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   disclaimerText: { fontSize: SIZES.small, color: '#92400E', ...FONTS.regular, lineHeight: 20 },
-  // Try again
   tryAgainBtn: { marginTop: 16 },
 });
 

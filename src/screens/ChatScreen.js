@@ -5,7 +5,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { COLORS, FONTS, SIZES } from '../theme';
-import { sendMessage } from '../services/api'; // Fixed import path
+import { sendMessage } from '../services/api';
 
 const QUICK_TOPICS = [
   { label: '🔍 Self-exam', msg: 'How do I do a self-exam?' },
@@ -41,9 +41,13 @@ const ChatScreen = () => {
       const res = await sendMessage(text.trim());
       console.log('✅ Response:', res);
       
+      // Extract the reply from the response
+      const replyText = res.reply || res.response || res.message || 
+        "I'm not sure how to help with that. Try asking about self-exams, symptoms, risk factors, screening, or treatment.";
+      
       const botMsg = {
         id: (Date.now() + 1).toString(),
-        text: res.response || res.message || "I'm not sure how to help with that. Try asking about self-exams, symptoms, risk factors, screening, or treatment.",
+        text: replyText,
         from: 'bot',
       };
       setMessages((prev) => [...prev, botMsg]);
@@ -59,6 +63,13 @@ const ChatScreen = () => {
           errorText = '😔 Server error. Please try again later.';
         } else if (err.response.status === 401) {
           errorText = '😔 Please log in again to continue.';
+        } else if (err.response.status === 422) {
+          // Validation error
+          const errors = err.response.data?.errors;
+          if (errors) {
+            const firstError = Object.values(errors)[0];
+            errorText = `😔 ${firstError[0] || 'Validation error'}`;
+          }
         }
       } else if (err.request) {
         errorText = '😔 No response from server. Check your internet connection.';
