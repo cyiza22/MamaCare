@@ -95,14 +95,6 @@ const HomeScreen = ({ navigation }) => {
           onPress={() => navigation.navigate('History')}
         />
 
-        <ActionCard
-          emoji="📱"
-          title="Offline Analysis"
-          description="Analyze ultrasound images on your phone — no internet needed"
-          color="#6B46C1"
-          onPress={() => navigation.navigate('OfflinePrediction')}
-        />
-
         {/* Self-exam reminder card */}
         <View style={styles.reminderCard}>
           <LinearGradient

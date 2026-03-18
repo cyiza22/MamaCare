@@ -7,9 +7,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import RiskBadge from '../components/RiskBadge';
 import { COLORS, FONTS, SIZES, SHADOWS } from '../theme';
 import { getHistory, deleteScreening, clearHistory } from '../services/api'; 
-import { getCachedHistory, mergeHistory, clearCache } from '../services/cache'; 
+import { getCachedScreenings, deleteScreeningFromCache, clearAllScreenings } from '../services/offlineCache'; 
 
-const HistoryScreen = () => {
+const HistoryScreen = ({ navigation }) => {
   const [screenings, setScreenings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -19,12 +19,11 @@ const HistoryScreen = () => {
     try {
       const data = await getHistory();
       const serverList = data.screenings || data.data || (Array.isArray(data) ? data : []);
-      const merged = await mergeHistory(serverList);
-      setScreenings(merged);
+      setScreenings(serverList);
       setOffline(false);
     } catch (err) {
       console.log('Server unavailable, showing cached:', err.message);
-      const cached = await getCachedHistory();
+      const cached = getCachedScreenings();
       setScreenings(cached);
       setOffline(true);
     } finally {
@@ -57,16 +56,27 @@ const HistoryScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Remove from server if it has a real ID
-              if (item.id && !item.synced === false) {
-                await deleteScreening(item.id);
+              // Try to delete from server
+              if (item.id && typeof item.id === 'number') {
+                try {
+                  await deleteScreening(item.id);
+                  console.log('✅ Deleted from server');
+                } catch (serverErr) {
+                  console.log('⚠️ Could not delete from server:', serverErr.message);
+                }
               }
+              
+              // Also delete from cache
+              if (item.id) {
+                await deleteScreeningFromCache(item.id);
+              }
+              
               // Remove from local state
               setScreenings((prev) => prev.filter((_, i) => i !== index));
+              Alert.alert('Success', 'Screening deleted');
             } catch (err) {
-              console.log('Delete error:', err.message);
-              // Still remove from UI
-              setScreenings((prev) => prev.filter((_, i) => i !== index));
+              console.error('Delete error:', err.message);
+              Alert.alert('Error', 'Failed to delete screening');
             }
           },
         },
@@ -88,14 +98,23 @@ const HistoryScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await clearHistory();
-              await clearCache();
+              // Try to clear from server
+              try {
+                await clearHistory();
+                console.log('✅ Cleared from server');
+              } catch (serverErr) {
+                console.log('⚠️ Could not clear from server:', serverErr.message);
+              }
+              
+              // Clear from cache
+              await clearAllScreenings();
+              
+              // Clear local state
               setScreenings([]);
+              Alert.alert('Success', 'All screening history cleared');
             } catch (err) {
-              console.log('Clear error:', err.message);
-              // Clear local anyway
-              await clearCache();
-              setScreenings([]);
+              console.error('Clear error:', err.message);
+              Alert.alert('Error', 'Failed to clear history');
             }
           },
         },
@@ -213,7 +232,7 @@ const HistoryScreen = () => {
           <Text style={styles.emptyEmoji}>🌸</Text>
           <Text style={styles.emptyTitle}>No screenings yet</Text>
           <Text style={styles.emptyText}>
-            Complete a risk assessment or use offline image analysis to see results here.
+            Complete a risk assessment or use image analysis to see results here.
           </Text>
         </View>
       ) : (

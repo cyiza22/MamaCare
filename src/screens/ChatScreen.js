@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   FlatList, KeyboardAvoidingView, Platform, StatusBar,
@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { COLORS, FONTS, SIZES } from '../theme';
 import { sendMessage } from '../services/api';
+import { cacheChatMessage, getCachedChatHistory, clearChatHistory } from '../services/offlineCache';
 
 const QUICK_TOPICS = [
   { label: '🔍 Self-exam', msg: 'How do I do a self-exam?' },
@@ -28,12 +29,39 @@ const ChatScreen = () => {
   const [loading, setLoading] = useState(false);
   const flatListRef = useRef(null);
 
+  // Load cached chat history on mount
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      try {
+        const cachedMessages = await getCachedChatHistory();
+        if (cachedMessages && cachedMessages.length > 0) {
+          setMessages(cachedMessages);
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }, 100);
+        }
+      } catch (error) {
+        console.error('Failed to load chat history:', error);
+      }
+    };
+    
+    loadChatHistory();
+  }, []);
+
   const send = async (text) => {
     if (!text.trim()) return;
 
     const userMsg = { id: Date.now().toString(), text: text.trim(), from: 'user' };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    
+    // Cache user message
+    try {
+      await cacheChatMessage(text.trim(), 'user');
+    } catch (error) {
+      console.error('Failed to cache user message:', error);
+    }
+    
     setLoading(true);
 
     try {
@@ -51,6 +79,13 @@ const ChatScreen = () => {
         from: 'bot',
       };
       setMessages((prev) => [...prev, botMsg]);
+      
+      // Cache assistant message
+      try {
+        await cacheChatMessage(replyText, 'assistant');
+      } catch (error) {
+        console.error('Failed to cache assistant message:', error);
+      }
     } catch (err) {
       console.error('❌ Error:', err);
       

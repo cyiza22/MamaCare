@@ -1,21 +1,24 @@
+// ============================================================
+// FILE: src/services/api.js
+// Updated with offline cache support
+// ============================================================
+
 import axios from 'axios';
+import { cacheAuthToken } from './offlineCache';
 
 const BASE_URL = 'https://courageous-illumination-production-1258.up.railway.app/api';
 
-// Main API instance for JSON requests
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Separate instance for file uploads (multipart)
 const uploadApi = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
 });
 
-// Store auth token
 let authToken = null;
 
 export const setToken = (token) => {
@@ -33,7 +36,6 @@ export const clearToken = () => {
   delete uploadApi.defaults.headers.common['Authorization'];
 };
 
-// AUTH
 export const signup = async (name, email, password) => {
   const res = await api.post('/signup', {
     name,
@@ -41,23 +43,31 @@ export const signup = async (name, email, password) => {
     password,
     password_confirmation: password,
   });
-  if (res.data.token) setToken(res.data.token);
+  if (res.data.token) {
+    setToken(res.data.token);
+    // Cache token for offline access
+    await cacheAuthToken(res.data.token, { name, email });
+    console.log('💾 Token cached for offline use');
+  }
   return res.data;
 };
 
 export const login = async (email, password) => {
   const res = await api.post('/login', { email, password });
-  if (res.data.token) setToken(res.data.token);
+  if (res.data.token) {
+    setToken(res.data.token);
+    // Cache token for offline access
+    await cacheAuthToken(res.data.token, { email });
+    console.log('💾 Token cached for offline use');
+  }
   return res.data;
 };
 
-// SCREENING (Questionnaire)
 export const submitScreening = async (answers) => {
   const res = await api.post('/screen', answers);
   return res.data;
 };
 
-// CHAT ASSISTANT
 export const sendMessage = async (message) => {
   console.log('📤 Sending to /assist:', { message });
   
@@ -74,7 +84,6 @@ export const sendMessage = async (message) => {
   }
 };
 
-// SCREENING HISTORY
 export const getHistory = async () => {
   const res = await api.get('/screenings');
   return res.data;
@@ -90,7 +99,6 @@ export const clearHistory = async () => {
   return res.data;
 };
 
-// Helper: Convert file URI to blob
 const uriToBlob = async (uri) => {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -104,32 +112,23 @@ const uriToBlob = async (uri) => {
   });
 };
 
-// IMAGE PREDICTION (Ultrasound) - FIXED WITH SEPARATE UPLOAD INSTANCE
 export const uploadUltrasound = async (imageUri) => {
   try {
     console.log('📤 Starting upload...');
     console.log('Token present:', authToken ? 'YES ✓' : 'NO ✗');
     console.log('Auth header in uploadApi:', uploadApi.defaults.headers.common['Authorization'] ? 'YES ✓' : 'NO ✗');
     
-    // Convert URI to blob
     console.log('Converting image to blob...');
     const imageBlob = await uriToBlob(imageUri);
     console.log('✅ Blob created:', imageBlob.size, 'bytes');
     
-    // Create FormData
     const formData = new FormData();
-    
-    // Extract filename
     const filename = imageUri.split('/').pop() || 'ultrasound.jpg';
     
-    // Append blob as file
     formData.append('image', imageBlob, filename);
 
     console.log('📦 FormData prepared with blob');
-    console.log('About to send with uploadApi instance');
-    console.log('uploadApi Authorization header:', uploadApi.defaults.headers.common['Authorization'] || 'MISSING');
 
-    // Use the dedicated upload instance which has the token set
     const res = await uploadApi.post('/predict', formData);
 
     console.log('✅ Upload successful!');

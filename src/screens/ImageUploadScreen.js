@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Image, ScrollView,
   TouchableOpacity, ActivityIndicator, StatusBar, Alert,
@@ -9,12 +9,33 @@ import { COLORS, FONTS, SIZES, SHADOWS } from '../theme';
 import PinkButton from '../components/PinkButton';
 import { uploadUltrasound } from '../services/api';
 import { cacheScreening } from '../services/cache';
+import { analyzeOffline, initMLModel, isMLReady } from '../services/MLService';
 
 const ImageUploadScreen = ({ navigation }) => {
   const [image, setImage] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [offlineLoading, setOfflineLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [debugInfo, setDebugInfo] = useState('');
+  const [mlReady, setMlReady] = useState(false);
+  const [analysisMode, setAnalysisMode] = useState(null); // 'offline' or 'server'
+
+  // Initialize ML model on component mount
+  useEffect(() => {
+    const initModel = async () => {
+      try {
+        console.log('🚀 Initializing ML model...');
+        await initMLModel();
+        setMlReady(true);
+        console.log('✅ ML model ready');
+      } catch (error) {
+        console.error('⚠️ ML model initialization failed:', error.message);
+        // App continues without offline mode
+      }
+    };
+
+    initModel();
+  }, []);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -39,6 +60,7 @@ const ImageUploadScreen = ({ navigation }) => {
       });
       setImage(asset);
       setResult(null);
+      setAnalysisMode(null);
       setDebugInfo(`Image: ${asset.width}x${asset.height}`);
     }
   };
@@ -64,25 +86,74 @@ const ImageUploadScreen = ({ navigation }) => {
       });
       setImage(asset);
       setResult(null);
+      setAnalysisMode(null);
       setDebugInfo(`Photo: ${asset.width}x${asset.height}`);
     }
   };
 
-  const handleUpload = async () => {
+  // Offline analysis using local ML model
+  const handleOfflineAnalysis = async () => {
     if (!image) return;
-    
-    setLoading(true);
-    setDebugInfo('Uploading...');
-    
+
+    if (!isMLReady()) {
+      Alert.alert('⏳ Model Loading', 'The ML model is still loading. Please wait a moment and try again.');
+      return;
+    }
+
+    setOfflineLoading(true);
+    setAnalysisMode('offline');
+    setDebugInfo('Analyzing locally on device...');
+
     try {
-      console.log('🚀 Starting upload...');
+      console.log('🚀 Starting offline analysis...');
+      const offlineResult = await analyzeOffline(image.uri);
+
+      console.log('✅ Offline analysis complete:', offlineResult);
+      setDebugInfo('✅ Analysis complete (offline)!');
+
+      // Normalize result
+      const normalizedResult = {
+        label: offlineResult.label || 'unknown',
+        confidence: (offlineResult.confidence || 0) / 100, // Convert from percentage
+        probabilities: {
+          benign: (offlineResult.probabilities?.benign || 0) / 100,
+          malignant: (offlineResult.probabilities?.malignant || 0) / 100,
+          normal: (offlineResult.probabilities?.normal || 0) / 100,
+        },
+        class: offlineResult.class,
+        source: 'offline',
+      };
+
+      // Cache locally
+      await cacheScreening(normalizedResult, 'image');
+      setResult(normalizedResult);
+    } catch (err) {
+      console.error('❌ Offline analysis failed:', err);
+      setDebugInfo(`Error: ${err.message}`);
+      Alert.alert('❌ Analysis Failed', err.message || 'Failed to analyze image. Please try server analysis.');
+      setAnalysisMode(null);
+    } finally {
+      setOfflineLoading(false);
+    }
+  };
+
+  // Server analysis (your existing working code)
+  const handleServerAnalysis = async () => {
+    if (!image) return;
+
+    setLoading(true);
+    setAnalysisMode('server');
+    setDebugInfo('Uploading to server...');
+
+    try {
+      console.log('🚀 Starting server upload...');
       setDebugInfo('Uploading to server...');
-      
+
       const res = await uploadUltrasound(image.uri);
-      
+
       console.log('✅ Upload response:', res);
-      setDebugInfo('Upload successful!');
-      
+      setDebugInfo('✅ Analysis complete (server)!');
+
       // Normalize the response
       const normalizedResult = {
         label: res.label || 'unknown',
@@ -93,27 +164,27 @@ const ImageUploadScreen = ({ navigation }) => {
           normal: 0,
         },
         class: res.class,
+        source: 'server',
       };
-      
+
       console.log('📦 Normalized result:', normalizedResult);
-      
+
       // Cache the result locally
       await cacheScreening(normalizedResult, 'image');
-      
+
       setResult(normalizedResult);
-      setDebugInfo('Done!');
     } catch (err) {
       console.error('❌ Upload failed:', err);
-      
-      const errorMsg = err.response?.data?.message || 
-                       err.response?.data?.error ||
-                       err.message || 
-                       'Unknown error';
-      
+
+      const errorMsg = err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Unknown error';
+
       setDebugInfo(`Error: ${errorMsg}`);
-      
+
       let displayMsg = 'Upload failed. Please try again.';
-      
+
       if (err.response?.status === 413) {
         displayMsg = 'Image is too large. Please choose a smaller image.';
       } else if (err.response?.status === 422) {
@@ -128,8 +199,9 @@ const ImageUploadScreen = ({ navigation }) => {
       } else if (err.message?.includes('timeout')) {
         displayMsg = 'Upload timed out. Please check your connection.';
       }
-      
+
       Alert.alert('Upload Failed', displayMsg);
+      setAnalysisMode(null);
     } finally {
       setLoading(false);
     }
@@ -200,20 +272,56 @@ const ImageUploadScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Upload button */}
+        {/* Analysis buttons */}
         {image && !result && (
-          <PinkButton
-            title={loading ? 'Uploading...' : 'Analyze Image'}
-            onPress={handleUpload}
-            disabled={loading}
-            style={styles.uploadBtn}
-          />
-        )}
+          <View style={styles.buttonContainer}>
+            {/* Offline button */}
+            <TouchableOpacity
+              style={[
+                styles.analysisBtn,
+                styles.offlineBtn,
+                (!mlReady || offlineLoading) && styles.buttonDisabled,
+              ]}
+              onPress={handleOfflineAnalysis}
+              disabled={!mlReady || offlineLoading}
+            >
+              {offlineLoading ? (
+                <>
+                  <ActivityIndicator size="small" color={COLORS.white} style={{ marginRight: 8 }} />
+                  <Text style={styles.analysisBtnText}>Analyzing Offline...</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.analysisBtnIcon}>📱</Text>
+                  <Text style={styles.analysisBtnText}>
+                    {mlReady ? 'Analyze on Device' : 'Loading Model...'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-        {loading && (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={COLORS.pink} />
-            <Text style={styles.loadingText}>Analyzing your image...</Text>
+            {/* Server button */}
+            <TouchableOpacity
+              style={[
+                styles.analysisBtn,
+                styles.serverBtn,
+                loading && styles.buttonDisabled,
+              ]}
+              onPress={handleServerAnalysis}
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <ActivityIndicator size="small" color={COLORS.white} style={{ marginRight: 8 }} />
+                  <Text style={styles.analysisBtnText}>Uploading...</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.analysisBtnIcon}>☁️</Text>
+                  <Text style={styles.analysisBtnText}>Analyze on Server</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
 
@@ -221,6 +329,13 @@ const ImageUploadScreen = ({ navigation }) => {
         {result && (
           <View style={styles.resultCard}>
             <Text style={styles.resultTitle}>Analysis Result</Text>
+
+            {/* Analysis source badge */}
+            <View style={styles.sourceBadge}>
+              <Text style={styles.sourceBadgeText}>
+                {result.source === 'offline' ? '📱 Device Analysis' : '☁️ Server Analysis'}
+              </Text>
+            </View>
 
             {/* Main prediction */}
             <View style={[styles.labelBadge, { backgroundColor: getLabelColor(result.label) + '15' }]}>
@@ -270,7 +385,7 @@ const ImageUploadScreen = ({ navigation }) => {
             <PinkButton
               title="Upload Another Image"
               variant="outline"
-              onPress={() => { setImage(null); setResult(null); setDebugInfo(''); }}
+              onPress={() => { setImage(null); setResult(null); setDebugInfo(''); setAnalysisMode(null); }}
               style={styles.tryAgainBtn}
             />
           </View>
@@ -344,13 +459,37 @@ const styles = StyleSheet.create({
   },
   pickEmoji: { fontSize: 28 },
   pickLabel: { fontSize: SIZES.small, color: COLORS.gray700, ...FONTS.semibold },
-  uploadBtn: { marginTop: 20 },
-  loadingBox: {
-    alignItems: 'center',
-    marginTop: 24,
+  buttonContainer: {
     gap: 12,
+    marginTop: 20,
   },
-  loadingText: { fontSize: SIZES.body, color: COLORS.gray600, ...FONTS.medium },
+  analysisBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    ...SHADOWS.small,
+  },
+  offlineBtn: {
+    backgroundColor: '#8E44AD',
+  },
+  serverBtn: {
+    backgroundColor: COLORS.pink,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  analysisBtnIcon: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  analysisBtnText: {
+    color: COLORS.white,
+    fontSize: SIZES.body,
+    ...FONTS.semibold,
+  },
   resultCard: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
@@ -358,7 +497,19 @@ const styles = StyleSheet.create({
     marginTop: 20,
     ...SHADOWS.small,
   },
-  resultTitle: { fontSize: SIZES.subtitle, ...FONTS.bold, color: COLORS.dark, marginBottom: 16 },
+  resultTitle: { fontSize: SIZES.subtitle, ...FONTS.bold, color: COLORS.dark, marginBottom: 12 },
+  sourceBadge: {
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  sourceBadgeText: {
+    fontSize: SIZES.small,
+    color: COLORS.gray700,
+    ...FONTS.medium,
+  },
   labelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
