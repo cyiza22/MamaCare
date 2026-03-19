@@ -1,359 +1,354 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View, Text, StyleSheet, Image, ScrollView,
-  TouchableOpacity, ActivityIndicator, StatusBar, Alert,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
-import * as tf from '@tensorflow/tfjs';
-import jpeg from 'jpeg-js';
-import { Buffer } from 'buffer';
-import { COLORS, FONTS, SIZES, SHADOWS } from '../theme';
 import PinkButton from '../components/PinkButton';
-import { cacheScreening } from '../services/cache';
+import RiskBadge from '../components/RiskBadge';
+import { COLORS, FONTS, SIZES, SHADOWS } from '../theme';
 
-const CLASS_NAMES = ['benign', 'malignant', 'normal'];
-
-const OfflinePredictionScreen = ({ navigation }) => {
-  const [image, setImage] = useState(null);
+const OfflinePredictionScreen = () => {
+  const navigation = useNavigation();
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [modelReady, setModelReady] = useState(false);
-  const [modelLoading, setModelLoading] = useState(true);
-  const [result, setResult] = useState(null);
-  const modelRef = useRef(null);
-
-  useEffect(() => {
-    loadModel();
-  }, []);
-
-  const loadModel = async () => {
-    try {
-      setModelLoading(true);
-      await tf.ready();
-      console.log('TF backend:', tf.getBackend());
-
-      // Fetch model.json manually so we can patch it
-      const response = await fetch('/model/model.json');
-      const modelJSON = await response.json();
-
-      // Patch: ensure InputLayer has batch_input_shape
-      const layers = modelJSON.modelTopology?.config?.layers || [];
-      for (const layer of layers) {
-        if (layer.class_name === 'InputLayer' && !layer.config.batch_input_shape) {
-          layer.config.batch_input_shape = [null, 224, 224, 3];
-          console.log('Patched InputLayer shape');
-        }
-      }
-
-      // Fetch weights
-      const weightsResponse = await fetch('/model/group1-shard1of1.bin');
-      const weightsBuffer = await weightsResponse.arrayBuffer();
-      console.log('Weights size:', weightsBuffer.byteLength);
-
-      const weightSpecs = modelJSON.weightsManifest[0].weights;
-
-      const model = await tf.loadLayersModel({
-        load: async () => ({
-          modelTopology: modelJSON.modelTopology,
-          weightSpecs,
-          weightData: weightsBuffer,
-        }),
-      });
-
-      modelRef.current = model;
-      setModelReady(true);
-      console.log('Model loaded!');
-    } catch (err) {
-      console.log('Model load error:', err.message);
-      Alert.alert('Model Error', err.message);
-    } finally {
-      setModelLoading(false);
-    }
-  };
-
-  const imageToTensor = async (uri) => {
-    // Resize to 224x224 and get base64
-    const manipulated = await ImageManipulator.manipulateAsync(
-      uri,
-      [{ resize: { width: 224, height: 224 } }],
-      { format: ImageManipulator.SaveFormat.JPEG, base64: true }
-    );
-
-    // Decode JPEG to raw RGBA pixels
-    const rawData = Buffer.from(manipulated.base64, 'base64');
-    const { data, width, height } = jpeg.decode(rawData, { useTArray: true });
-
-    // Convert RGBA to RGB Float32Array
-    const pixelCount = width * height;
-    const rgbData = new Float32Array(pixelCount * 3);
-    for (let i = 0; i < pixelCount; i++) {
-      rgbData[i * 3] = data[i * 4];         // R
-      rgbData[i * 3 + 1] = data[i * 4 + 1]; // G
-      rgbData[i * 3 + 2] = data[i * 4 + 2]; // B
-    }
-
-    return tf.tensor4d(rgbData, [1, 224, 224, 3]);
-  };
+  const [error, setError] = useState(null);
 
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access.');
-      return;
-    }
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
     });
-    if (!picked.canceled) {
-      setImage(picked.assets[0]);
-      setResult(null);
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+      setPrediction(null);
+      setError(null);
     }
   };
 
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow camera access.');
+  const analyzeImage = async () => {
+    if (!selectedImage) {
+      setError('Please select an image first');
       return;
     }
-    const picked = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
-      allowsEditing: true,
-    });
-    if (!picked.canceled) {
-      setImage(picked.assets[0]);
-      setResult(null);
-    }
-  };
 
-  const predict = async () => {
-    if (!image || !modelRef.current) return;
     setLoading(true);
+    setError(null);
 
     try {
-      const imageTensor = await imageToTensor(image.uri);
-      const prediction = modelRef.current.predict(imageTensor);
-      const probs = await prediction.data();
+      // Send to API for analysis
+      const formData = new FormData();
+      formData.append('image', {
+        uri: selectedImage,
+        type: 'image/jpeg',
+        name: 'ultrasound.jpg',
+      });
 
-      const maxIdx = Array.from(probs).indexOf(Math.max(...probs));
-
-      const predResult = {
-        label: CLASS_NAMES[maxIdx],
-        confidence: Math.round(probs[maxIdx] * 10000) / 10000,
-        probabilities: {
-          benign: Math.round(probs[0] * 10000) / 10000,
-          malignant: Math.round(probs[1] * 10000) / 10000,
-          normal: Math.round(probs[2] * 10000) / 10000,
+      const response = await fetch('https://breast-canserscreening-production-950a.up.railway.app/api/predict', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Content-Type': 'multipart/form-data',
         },
-        model_type: 'on_device_tfjs',
-      };
+      });
 
-      setResult(predResult);
-      await cacheScreening(predResult, 'image');
-      tf.dispose([imageTensor, prediction]);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      setPrediction(result);
     } catch (err) {
-      console.log('Prediction error:', err);
-      Alert.alert('Prediction Failed', err.message);
+      console.error('Analysis error:', err);
+      setError(err.message || 'Failed to analyze image. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const getLabelColor = (l) =>
-    l === 'malignant' ? '#E53E3E' : l === 'benign' ? '#38A169' : '#3182CE';
-
-  const getLabelEmoji = (l) =>
-    l === 'malignant' ? '🔴' : l === 'benign' ? '🟢' : '🔵';
+  const getRiskColor = (label) => {
+    if (label === 'benign') return COLORS.success;
+    if (label === 'malignant') return COLORS.danger;
+    return COLORS.gray;
+  };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Ultrasound Analysis</Text>
+        <Text style={styles.subtitle}>Upload an ultrasound image for AI-powered analysis</Text>
+      </View>
 
-      <LinearGradient colors={['#6B46C1', '#805AD5']} style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Offline Analysis</Text>
-            <Text style={styles.headerSub}>AI runs on your phone — no internet needed</Text>
-          </View>
-          <View style={[styles.statusDot, modelReady ? styles.dotGreen : styles.dotRed]} />
-        </View>
-      </LinearGradient>
-
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-
-        {modelLoading && (
-          <View style={styles.statusBox}>
-            <ActivityIndicator size="small" color="#6B46C1" />
-            <Text style={[styles.statusText, { color: '#6B46C1' }]}>Loading AI model...</Text>
-          </View>
-        )}
-
-        {modelReady && !modelLoading && (
-          <View style={[styles.statusBox, { backgroundColor: '#F0FFF4' }]}>
-            <Text style={[styles.statusText, { color: '#38A169' }]}>
-              AI model ready — works without internet
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.imageSection}>
-          {image ? (
-            <Image source={{ uri: image.uri }} style={styles.preview} />
-          ) : (
-            <View style={styles.placeholder}>
-              <Text style={styles.placeholderEmoji}>📱</Text>
-              <Text style={styles.placeholderText}>No image selected</Text>
-              <Text style={styles.placeholderHint}>Works completely offline</Text>
+      <View style={styles.section}>
+        {selectedImage ? (
+          <View style={styles.imageContainer}>
+            <Text style={styles.selectedLabel}>Selected Image</Text>
+            <View style={styles.imageThumbnail}>
+              {/* Note: Image display would require additional setup */}
+              <Text style={styles.imageText}>📷 Image selected</Text>
             </View>
-          )}
-        </View>
-
-        <View style={styles.pickRow}>
-          <TouchableOpacity style={styles.pickBtn} onPress={pickImage}>
-            <Text style={styles.pickEmoji}>🖼️</Text>
-            <Text style={styles.pickLabel}>Gallery</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.pickBtn} onPress={takePhoto}>
-            <Text style={styles.pickEmoji}>📷</Text>
-            <Text style={styles.pickLabel}>Camera</Text>
-          </TouchableOpacity>
-        </View>
-
-        {image && !result && (
-          <PinkButton
-            title={loading ? 'Analyzing...' : 'Analyze on Device'}
-            onPress={predict}
-            disabled={loading || !modelReady}
-            style={{ marginTop: 20 }}
-          />
-        )}
-
-        {loading && (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#6B46C1" />
-            <Text style={styles.loadingText}>Running AI on your phone...</Text>
-          </View>
-        )}
-
-        {result && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultTitle}>On-Device Result</Text>
-
-            <View style={[styles.labelBadge, { backgroundColor: getLabelColor(result.label) + '15' }]}>
-              <Text style={{ fontSize: 32 }}>{getLabelEmoji(result.label)}</Text>
-              <View>
-                <Text style={[styles.labelText, { color: getLabelColor(result.label) }]}>
-                  {result.label?.toUpperCase()}
-                </Text>
-                <Text style={styles.confText}>
-                  {(result.confidence * 100).toFixed(1)}% confidence
-                </Text>
-              </View>
-            </View>
-
-            {result.probabilities && (
-              <View style={{ marginTop: 20 }}>
-                <Text style={styles.probTitle}>Detailed Probabilities</Text>
-                {Object.entries(result.probabilities).map(([key, val]) => (
-                  <View key={key} style={styles.probRow}>
-                    <Text style={styles.probLabel}>
-                      {getLabelEmoji(key)} {key.charAt(0).toUpperCase() + key.slice(1)}
-                    </Text>
-                    <View style={styles.probBarBg}>
-                      <View style={[styles.probBarFill, {
-                        width: `${val * 100}%`,
-                        backgroundColor: getLabelColor(key),
-                      }]} />
-                    </View>
-                    <Text style={styles.probVal}>{(val * 100).toFixed(1)}%</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <View style={styles.offlineBadge}>
-              <Text style={styles.offlineText}>📱 Analyzed on-device (no internet used)</Text>
-            </View>
-
-            <View style={styles.disclaimer}>
-              <Text style={styles.disclaimerText}>
-                This is a preliminary AI screening tool and not a medical diagnosis.
-                Please consult a healthcare professional for proper evaluation.
-              </Text>
-            </View>
-
             <PinkButton
-              title="Upload Another Image"
-              variant="outline"
-              onPress={() => { setImage(null); setResult(null); }}
-              style={{ marginTop: 16 }}
+              text="Change Image"
+              onPress={pickImage}
+              style={styles.marginTop}
+            />
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>📤</Text>
+            <Text style={styles.emptyText}>No image selected</Text>
+            <PinkButton
+              text="Select Image"
+              onPress={pickImage}
+              style={styles.marginTop}
             />
           </View>
         )}
+      </View>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
-    </View>
+      {selectedImage && !prediction && !loading && (
+        <PinkButton
+          text="Analyze Image"
+          onPress={analyzeImage}
+          style={styles.analyzeButton}
+        />
+      )}
+
+      {loading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Analyzing image...</Text>
+        </View>
+      )}
+
+      {error && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>⚠️ {error}</Text>
+        </View>
+      )}
+
+      {prediction && (
+        <View style={styles.resultBox}>
+          <Text style={styles.resultTitle}>Analysis Result</Text>
+          
+          <View style={[styles.resultBadge, { backgroundColor: getRiskColor(prediction.label) }]}>
+            <Text style={styles.resultLabel}>{prediction.label.toUpperCase()}</Text>
+          </View>
+
+          <View style={styles.confidenceContainer}>
+            <Text style={styles.confidenceLabel}>Confidence:</Text>
+            <Text style={styles.confidenceValue}>
+              {(prediction.confidence * 100).toFixed(1)}%
+            </Text>
+          </View>
+
+          <View style={styles.probabilitiesContainer}>
+            <Text style={styles.probabilitiesTitle}>Detailed Probabilities:</Text>
+            {Object.entries(prediction.probabilities || {}).map(([key, value]) => (
+              <View key={key} style={styles.probabilityRow}>
+                <Text style={styles.probabilityLabel}>{key}:</Text>
+                <Text style={styles.probabilityValue}>
+                  {(value * 100).toFixed(1)}%
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.disclaimer}>
+            <Text style={styles.disclaimerText}>
+              This analysis is for educational purposes only and should not be used for medical diagnosis. 
+              Always consult with a healthcare professional.
+            </Text>
+          </View>
+
+          <PinkButton
+            text="Analyze Another Image"
+            onPress={() => {
+              setSelectedImage(null);
+              setPrediction(null);
+              setError(null);
+            }}
+            style={styles.marginTop}
+          />
+        </View>
+      )}
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.offWhite },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  contentContainer: {
+    padding: SIZES.padding,
+    paddingBottom: SIZES.padding * 2,
+  },
   header: {
-    paddingTop: 56, paddingBottom: 24, paddingHorizontal: 24,
-    borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
+    marginBottom: SIZES.padding * 2,
   },
-  backBtn: { marginBottom: 8 },
-  backText: { color: COLORS.white, fontSize: SIZES.body, ...FONTS.medium },
-  headerRow: { flexDirection: 'row', alignItems: 'center' },
-  headerTitle: { fontSize: SIZES.title, color: COLORS.white, ...FONTS.bold },
-  headerSub: { fontSize: SIZES.small, color: 'rgba(255,255,255,0.8)', ...FONTS.regular, marginTop: 4 },
-  statusDot: { width: 12, height: 12, borderRadius: 6, marginLeft: 12 },
-  dotGreen: { backgroundColor: '#48BB78' },
-  dotRed: { backgroundColor: '#FC8181' },
-  body: { flex: 1 },
-  bodyContent: { padding: 20 },
-  statusBox: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: '#F3F0FF', borderRadius: 12, padding: 14, marginBottom: 16,
+  title: {
+    fontSize: SIZES.title,
+    fontWeight: FONTS.bold,
+    color: COLORS.text,
+    marginBottom: SIZES.spacing,
   },
-  statusText: { fontSize: SIZES.small, ...FONTS.medium },
-  imageSection: { backgroundColor: COLORS.white, borderRadius: 20, overflow: 'hidden', ...SHADOWS.small },
-  preview: { width: '100%', height: 280, resizeMode: 'cover' },
-  placeholder: { height: 220, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F0FF' },
-  placeholderEmoji: { fontSize: 48, marginBottom: 8 },
-  placeholderText: { fontSize: SIZES.subtitle, color: COLORS.gray600, ...FONTS.semibold },
-  placeholderHint: { fontSize: SIZES.small, color: COLORS.gray400, ...FONTS.regular, marginTop: 4 },
-  pickRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
-  pickBtn: {
-    flex: 1, backgroundColor: COLORS.white, borderRadius: 16,
-    padding: 16, alignItems: 'center', gap: 6, ...SHADOWS.small,
+  subtitle: {
+    fontSize: SIZES.body,
+    color: COLORS.gray,
+    lineHeight: 20,
   },
-  pickEmoji: { fontSize: 28 },
-  pickLabel: { fontSize: SIZES.small, color: COLORS.gray700, ...FONTS.semibold },
-  loadingBox: { alignItems: 'center', marginTop: 24, gap: 12 },
-  loadingText: { fontSize: SIZES.body, color: COLORS.gray600, ...FONTS.medium },
-  resultCard: { backgroundColor: COLORS.white, borderRadius: 20, padding: 20, marginTop: 20, ...SHADOWS.small },
-  resultTitle: { fontSize: SIZES.subtitle, ...FONTS.bold, color: COLORS.dark, marginBottom: 16 },
-  labelBadge: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 16, gap: 14 },
-  labelText: { fontSize: SIZES.title, ...FONTS.bold },
-  confText: { fontSize: SIZES.small, color: COLORS.gray600, ...FONTS.medium, marginTop: 2 },
-  probTitle: { fontSize: SIZES.body, ...FONTS.semibold, color: COLORS.gray700, marginBottom: 12 },
-  probRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
-  probLabel: { width: 100, fontSize: SIZES.small, color: COLORS.gray700, ...FONTS.medium },
-  probBarBg: { flex: 1, height: 8, backgroundColor: COLORS.gray100, borderRadius: 4, overflow: 'hidden' },
-  probBarFill: { height: '100%', borderRadius: 4 },
-  probVal: { width: 48, fontSize: SIZES.small, color: COLORS.gray600, ...FONTS.medium, textAlign: 'right' },
-  offlineBadge: { backgroundColor: '#F3F0FF', borderRadius: 12, padding: 12, marginTop: 16, alignItems: 'center' },
-  offlineText: { fontSize: SIZES.small, color: '#6B46C1', ...FONTS.medium },
-  disclaimer: { backgroundColor: '#FFFBEB', borderRadius: 12, padding: 14, marginTop: 12 },
-  disclaimerText: { fontSize: SIZES.small, color: '#92400E', ...FONTS.regular, lineHeight: 20 },
+  section: {
+    marginBottom: SIZES.padding * 2,
+    backgroundColor: COLORS.white,
+    borderRadius: SIZES.radius,
+    padding: SIZES.padding,
+    ...SHADOWS.card,
+  },
+  imageContainer: {
+    alignItems: 'center',
+  },
+  selectedLabel: {
+    fontSize: SIZES.small,
+    color: COLORS.gray,
+    marginBottom: SIZES.spacing,
+  },
+  imageThumbnail: {
+    width: 200,
+    height: 200,
+    backgroundColor: COLORS.lightGray,
+    borderRadius: SIZES.radius,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SIZES.padding,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  imageText: {
+    fontSize: SIZES.large,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: SIZES.padding,
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: SIZES.spacing,
+  },
+  emptyText: {
+    fontSize: SIZES.body,
+    color: COLORS.gray,
+    marginBottom: SIZES.padding,
+  },
+  marginTop: {
+    marginTop: SIZES.padding,
+  },
+  analyzeButton: {
+    marginBottom: SIZES.padding * 2,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SIZES.padding * 2,
+  },
+  loadingText: {
+    marginTop: SIZES.spacing,
+    fontSize: SIZES.body,
+    color: COLORS.gray,
+  },
+  errorBox: {
+    backgroundColor: COLORS.dangerLight,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.danger,
+    padding: SIZES.padding,
+    borderRadius: SIZES.radius,
+    marginBottom: SIZES.padding,
+  },
+  errorText: {
+    color: COLORS.danger,
+    fontSize: SIZES.body,
+  },
+  resultBox: {
+    backgroundColor: COLORS.white,
+    borderRadius: SIZES.radius,
+    padding: SIZES.padding,
+    ...SHADOWS.card,
+  },
+  resultTitle: {
+    fontSize: SIZES.heading,
+    fontWeight: FONTS.bold,
+    color: COLORS.text,
+    marginBottom: SIZES.padding,
+  },
+  resultBadge: {
+    paddingVertical: SIZES.padding,
+    paddingHorizontal: SIZES.padding * 2,
+    borderRadius: SIZES.radius,
+    alignItems: 'center',
+    marginBottom: SIZES.padding,
+  },
+  resultLabel: {
+    color: COLORS.white,
+    fontSize: SIZES.heading,
+    fontWeight: FONTS.bold,
+  },
+  confidenceContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: SIZES.spacing,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+    marginBottom: SIZES.padding,
+  },
+  confidenceLabel: {
+    fontSize: SIZES.body,
+    color: COLORS.gray,
+  },
+  confidenceValue: {
+    fontSize: SIZES.body,
+    fontWeight: FONTS.bold,
+    color: COLORS.text,
+  },
+  probabilitiesContainer: {
+    marginBottom: SIZES.padding,
+  },
+  probabilitiesTitle: {
+    fontSize: SIZES.body,
+    fontWeight: FONTS.bold,
+    color: COLORS.text,
+    marginBottom: SIZES.spacing,
+  },
+  probabilityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: SIZES.spacing,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  probabilityLabel: {
+    fontSize: SIZES.small,
+    color: COLORS.gray,
+    textTransform: 'capitalize',
+  },
+  probabilityValue: {
+    fontSize: SIZES.small,
+    fontWeight: FONTS.bold,
+    color: COLORS.text,
+  },
+  disclaimer: {
+    backgroundColor: COLORS.warningLight,
+    padding: SIZES.spacing,
+    borderRadius: SIZES.radius,
+    marginBottom: SIZES.padding,
+  },
+  disclaimerText: {
+    fontSize: SIZES.small,
+    color: COLORS.warning,
+    lineHeight: 18,
+  },
 });
 
 export default OfflinePredictionScreen;

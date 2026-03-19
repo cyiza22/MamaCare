@@ -224,7 +224,7 @@ const QuestionnaireScreen = ({ navigation }) => {
           <PinkButton
             title="Chat with Assistant"
             variant="outline"
-            onPress={() => navigation.navigate('Chat')}
+            onPress={() => navigation.navigate('Main', { screen: 'Chat' })}
             style={{ marginTop: 10, width: '100%' }}
           />
         </ScrollView>
