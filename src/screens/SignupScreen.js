@@ -1,5 +1,3 @@
-// src/screens/SignupScreen.js
-
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, KeyboardAvoidingView,
@@ -16,6 +14,7 @@ const SignupScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [accepted, setAccepted] = useState(false); // ✅ NEW
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
@@ -23,25 +22,35 @@ const SignupScreen = ({ navigation }) => {
       Alert.alert('Oops!', 'Please fill in all fields');
       return;
     }
+
+    if (!accepted) { // ✅ NEW
+      Alert.alert(
+        'Terms Required',
+        'You must accept the Terms & Privacy Policy before continuing.'
+      );
+      return;
+    }
+
     if (password.length < 6) {
       Alert.alert('Oops!', 'Password must be at least 6 characters');
       return;
     }
+
     if (password !== confirmPassword) {
       Alert.alert('Oops!', 'Passwords do not match');
       return;
     }
+
     setLoading(true);
+
     try {
       await signup(name.trim(), email.trim(), password);
       navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
     } catch (err) {
-      // Handle structured error from Laravel
       const data = err.response?.data;
       let msg = 'Signup failed. Please try again.';
 
       if (data?.errors) {
-        // Laravel validation errors — grab the first one
         const firstField = Object.keys(data.errors)[0];
         msg = data.errors[firstField][0];
       } else if (data?.message) {
@@ -57,6 +66,7 @@ const SignupScreen = ({ navigation }) => {
   return (
     <LinearGradient colors={[COLORS.white, COLORS.pinkSoft]} style={styles.container}>
       <StatusBar barStyle="dark-content" />
+
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -72,6 +82,7 @@ const SignupScreen = ({ navigation }) => {
           <Text style={styles.subtitle}>Create your account to get started</Text>
 
           <View style={styles.form}>
+            {/* Inputs */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Full Name</Text>
               <TextInput
@@ -126,11 +137,42 @@ const SignupScreen = ({ navigation }) => {
               )}
             </View>
 
+            {/* ✅ TERMS CHECKBOX */}
+            <View style={styles.termsContainer}>
+              <TouchableOpacity
+                onPress={() => setAccepted(!accepted)}
+                style={styles.checkbox}
+              >
+                <View style={[styles.box, accepted && styles.boxChecked]} />
+              </TouchableOpacity>
+
+              <Text style={styles.termsText}>
+                I agree to the{' '}
+                <Text
+                  style={styles.link}
+                  onPress={() => navigation.navigate('Legal')}
+                >
+                  Terms
+                </Text>{' '}
+                and{' '}
+                <Text
+                  style={styles.link}
+                  onPress={() => navigation.navigate('Legal')}
+                >
+                  Privacy Policy
+                </Text>
+              </Text>
+            </View>
+
+            {/* Button */}
             <PinkButton
               title="Create Account"
               onPress={handleSignup}
               loading={loading}
-              style={{ marginTop: 8 }}
+              style={{
+                marginTop: 8,
+                opacity: accepted ? 1 : 0.5, // ✅ visual feedback
+              }}
             />
           </View>
 
@@ -139,6 +181,7 @@ const SignupScreen = ({ navigation }) => {
               Already have an account? <Text style={styles.switchLink}>Sign In</Text>
             </Text>
           </TouchableOpacity>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -147,6 +190,7 @@ const SignupScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 24,
@@ -154,12 +198,14 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     alignItems: 'center',
   },
+
   title: {
     fontSize: SIZES.title,
     ...FONTS.bold,
     color: COLORS.dark,
     marginTop: 24,
   },
+
   subtitle: {
     fontSize: SIZES.body,
     color: COLORS.gray500,
@@ -167,6 +213,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 28,
   },
+
   form: {
     width: '100%',
     backgroundColor: COLORS.white,
@@ -175,13 +222,16 @@ const styles = StyleSheet.create({
     gap: 16,
     ...SHADOWS.medium,
   },
+
   inputGroup: { gap: 6 },
+
   label: {
     fontSize: SIZES.small,
     ...FONTS.semibold,
     color: COLORS.gray600,
     marginLeft: 4,
   },
+
   input: {
     backgroundColor: COLORS.pinkSoft,
     borderRadius: 14,
@@ -191,10 +241,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLORS.pinkLight,
   },
+
   inputError: {
     borderColor: '#EF5350',
     backgroundColor: '#FFF5F5',
   },
+
   errorHint: {
     fontSize: SIZES.tiny,
     color: '#EF5350',
@@ -202,12 +254,51 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginTop: 2,
   },
+
+  /* ✅ NEW STYLES */
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 8,
+  },
+
+  checkbox: {
+    marginRight: 10,
+    marginTop: 3,
+  },
+
+  box: {
+    width: 20,
+    height: 20,
+    borderWidth: 1.5,
+    borderColor: COLORS.gray400,
+    borderRadius: 4,
+  },
+
+  boxChecked: {
+    backgroundColor: COLORS.pink,
+    borderColor: COLORS.pink,
+  },
+
+  termsText: {
+    flex: 1,
+    fontSize: SIZES.small,
+    color: COLORS.gray600,
+    ...FONTS.regular,
+  },
+
+  link: {
+    color: COLORS.pink,
+    ...FONTS.medium,
+  },
+
   switchText: {
     marginTop: 24,
     fontSize: SIZES.body,
     color: COLORS.gray500,
     ...FONTS.regular,
   },
+
   switchLink: {
     color: COLORS.pink,
     ...FONTS.bold,

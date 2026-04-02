@@ -16,6 +16,7 @@ import HistoryScreen from '../screens/HistoryScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import ImageUploadScreen from '../screens/ImageUploadScreen';
 import OfflinePredictionScreen from '../screens/OfflinePredictionScreen';
+import LegalScreen from '../screens/LegalScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -23,13 +24,17 @@ const Tab = createBottomTabNavigator();
 // Custom tab bar icon
 const TabIcon = ({ emoji, label, focused }) => (
   <View style={styles.tabItem}>
-    <Text style={[styles.tabEmoji, focused && styles.tabEmojiActive]}>{emoji}</Text>
-    <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
+    <Text style={[styles.tabEmoji, focused && styles.tabEmojiActive]}>
+      {emoji}
+    </Text>
+    <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+      {label}
+    </Text>
     {focused && <View style={styles.tabDot} />}
   </View>
 );
 
-// Bottom tab navigator (main app screens)
+// Bottom tab navigator
 const MainTabs = () => (
   <Tab.Navigator
     screenOptions={{
@@ -81,13 +86,31 @@ const MainTabs = () => (
 const AppNavigator = () => (
   <NavigationContainer>
     <Stack.Navigator
-      screenOptions={{ headerShown: false }}
+      screenOptions={{ headerShown: false }} // global default (kept)
       initialRouteName="Welcome"
     >
       {/* Auth screens */}
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Signup" component={SignupScreen} />
+
+      {/* ✅ FIXED LEGAL SCREEN */}
+      <Stack.Screen
+        name="Legal"
+        component={LegalScreen}
+        options={{
+          headerShown: true,          // ✅ enables header ONLY here
+          title: 'Legal',             // ✅ title at the top
+          headerStyle: {
+            backgroundColor: COLORS.white,
+          },
+          headerTitleStyle: {
+            ...FONTS.bold,
+            color: COLORS.dark,
+          },
+          headerTintColor: COLORS.pink, // ✅ back arrow color
+        }}
+      />
 
       {/* Main app (tabs) */}
       <Stack.Screen name="Main" component={MainTabs} />
@@ -98,15 +121,16 @@ const AppNavigator = () => (
         component={QuestionnaireScreen}
         options={{ animation: 'slide_from_bottom' }}
       />
-      <Stack.Screen 
-        name="ImageUpload" 
-        component={ImageUploadScreen} 
+      <Stack.Screen
+        name="ImageUpload"
+        component={ImageUploadScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen 
-        name="OfflinePrediction" 
-        component={OfflinePredictionScreen} 
-        options={{ headerShown: false }} />
+      <Stack.Screen
+        name="OfflinePrediction"
+        component={OfflinePredictionScreen}
+        options={{ headerShown: false }}
+      />
 
     </Stack.Navigator>
   </NavigationContainer>

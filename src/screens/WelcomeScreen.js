@@ -5,7 +5,7 @@ import Logo from '../components/Logo';
 import PinkButton from '../components/PinkButton';
 import { COLORS, FONTS, SIZES } from '../theme';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 const WelcomeScreen = ({ navigation }) => {
   return (
@@ -56,7 +56,26 @@ const WelcomeScreen = ({ navigation }) => {
         />
       </View>
 
-      
+      {/* Legal */}
+      <View style={styles.legalContainer}>
+        <Text style={styles.legalText}>
+          By continuing, you agree to our{' '}
+          <Text
+            style={styles.legalLink}
+            onPress={() => navigation.navigate('Legal')}
+          >
+            Terms
+          </Text>{' '}
+          and{' '}
+          <Text
+            style={styles.legalLink}
+            onPress={() => navigation.navigate('Legal')}
+          >
+            Privacy Policy
+          </Text>
+        </Text>
+      </View>
+
     </LinearGradient>
   );
 };
@@ -69,7 +88,7 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
     justifyContent: 'space-between',
   },
-  // Decorative circles
+
   circle: {
     position: 'absolute',
     borderRadius: 999,
@@ -79,12 +98,12 @@ const styles = StyleSheet.create({
   circle1: { width: 200, height: 200, top: -50, right: -60 },
   circle2: { width: 150, height: 150, top: height * 0.3, left: -80 },
   circle3: { width: 100, height: 100, bottom: 100, right: -30 },
-  // Logo
+
   logoSection: {
     alignItems: 'center',
     marginTop: 20,
   },
-  // Features
+
   features: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
@@ -96,33 +115,48 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
+
   featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
   },
+
   featureEmoji: {
     fontSize: 24,
   },
+
   featureText: {
     fontSize: SIZES.body,
     color: COLORS.gray700,
     ...FONTS.medium,
     flex: 1,
   },
-  // Buttons
+
   buttons: {
     gap: 12,
   },
+
   btn: {
     width: '100%',
   },
-  // Footer
-  footer: {
-    textAlign: 'center',
-    fontSize: SIZES.small,
+
+  legalContainer: {
+    marginTop: 10,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+
+  legalText: {
+    fontSize: SIZES.tiny,
     color: COLORS.gray400,
+    textAlign: 'center',
     ...FONTS.regular,
+  },
+
+  legalLink: {
+    color: COLORS.pink,
+    ...FONTS.medium,
   },
 });
 

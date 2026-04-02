@@ -21,6 +21,7 @@ const MenuItem = ({ emoji, title, subtitle, onPress }) => (
 );
 
 const ProfileScreen = ({ navigation }) => {
+
   const handleLogout = () => {
     Alert.alert(
       'Sign Out',
@@ -48,7 +49,7 @@ const ProfileScreen = ({ navigation }) => {
       <StatusBar barStyle="dark-content" />
       <ScrollView showsVerticalScrollIndicator={false}>
 
-        {/* Profile header */}
+        {/* Header */}
         <LinearGradient
           colors={[COLORS.pinkSoft, COLORS.pinkPastel]}
           style={styles.header}
@@ -58,7 +59,7 @@ const ProfileScreen = ({ navigation }) => {
           <Text style={styles.headerSub}>Your breast health companion</Text>
         </LinearGradient>
 
-        {/* Menu sections */}
+        {/* HEALTH */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>HEALTH</Text>
           <View style={styles.menuCard}>
@@ -85,6 +86,7 @@ const ProfileScreen = ({ navigation }) => {
           </View>
         </View>
 
+        {/* LEARN */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>LEARN</Text>
           <View style={styles.menuCard}>
@@ -104,6 +106,7 @@ const ProfileScreen = ({ navigation }) => {
           </View>
         </View>
 
+        {/* ABOUT */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>ABOUT</Text>
           <View style={styles.menuCard}>
@@ -122,6 +125,26 @@ const ProfileScreen = ({ navigation }) => {
           </View>
         </View>
 
+        {/* LEGAL */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>LEGAL</Text>
+          <View style={styles.menuCard}>
+            <MenuItem
+              emoji="📄"
+              title="End User Agreement Privacy Policy"
+              subtitle="Terms of use & responsibilities"
+              onPress={() => navigation.navigate('Legal')}
+            />
+            <View style={styles.divider} />
+            <MenuItem
+              emoji="🔐"
+              title="Privacy Policy"
+              subtitle="How we protect patient data"
+              onPress={() => navigation.navigate('Legal')}
+            />
+          </View>
+        </View>
+
         {/* Logout */}
         <View style={styles.logoutSection}>
           <PinkButton
@@ -133,8 +156,6 @@ const ProfileScreen = ({ navigation }) => {
           />
         </View>
 
-       
-
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -143,28 +164,31 @@ const ProfileScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.offWhite },
-  // Header
+
   header: {
     paddingTop: 70,
     paddingBottom: 30,
     alignItems: 'center',
     gap: 8,
   },
+
   headerTitle: {
     fontSize: SIZES.title,
     ...FONTS.bold,
     color: COLORS.pinkDark,
   },
+
   headerSub: {
     fontSize: SIZES.small,
     color: COLORS.gray500,
     ...FONTS.regular,
   },
-  // Sections
+
   section: {
     paddingHorizontal: 20,
     marginTop: 24,
   },
+
   sectionLabel: {
     fontSize: SIZES.tiny,
     ...FONTS.bold,
@@ -173,52 +197,53 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 4,
   },
+
   menuCard: {
     backgroundColor: COLORS.white,
     borderRadius: 18,
     overflow: 'hidden',
     ...SHADOWS.small,
   },
+
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     gap: 14,
   },
+
   menuEmoji: { fontSize: 24 },
+
   menuContent: { flex: 1 },
+
   menuTitle: {
     fontSize: SIZES.body,
     ...FONTS.semibold,
     color: COLORS.dark,
   },
+
   menuSub: {
     fontSize: SIZES.small,
     color: COLORS.gray500,
     ...FONTS.regular,
     marginTop: 2,
   },
+
   menuArrow: {
     fontSize: 24,
     color: COLORS.gray300,
     ...FONTS.light,
   },
+
   divider: {
     height: 1,
     backgroundColor: COLORS.gray100,
     marginLeft: 54,
   },
-  // Logout
+
   logoutSection: {
     paddingHorizontal: 20,
     marginTop: 32,
-  },
-  version: {
-    textAlign: 'center',
-    fontSize: SIZES.tiny,
-    color: COLORS.gray400,
-    ...FONTS.regular,
-    marginTop: 20,
   },
 });
 
