@@ -1,9 +1,5 @@
-// ============================================================
-// FILE: src/services/api.js
-// Updated with offline cache support
-// ============================================================
-
 import axios from 'axios';
+import { Platform } from 'react-native';
 import { cacheAuthToken } from './offlineCache';
 
 const BASE_URL = 'https://courageous-illumination-production-1258.up.railway.app/api';
@@ -16,7 +12,7 @@ const api = axios.create({
 
 const uploadApi = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000,
+  timeout: 60000,
 });
 
 let authToken = null;
@@ -43,23 +39,25 @@ export const signup = async (name, email, password) => {
     password,
     password_confirmation: password,
   });
+
   if (res.data.token) {
     setToken(res.data.token);
-    // Cache token for offline access
     await cacheAuthToken(res.data.token, { name, email });
     console.log('💾 Token cached for offline use');
   }
+
   return res.data;
 };
 
 export const login = async (email, password) => {
   const res = await api.post('/login', { email, password });
+
   if (res.data.token) {
     setToken(res.data.token);
-    // Cache token for offline access
     await cacheAuthToken(res.data.token, { email });
     console.log('💾 Token cached for offline use');
   }
+
   return res.data;
 };
 
@@ -69,17 +67,11 @@ export const submitScreening = async (answers) => {
 };
 
 export const sendMessage = async (message) => {
-  console.log('📤 Sending to /assist:', { message });
-  
   try {
     const res = await api.post('/assist', { message });
-    console.log('✅ Response:', res.data);
     return res.data;
   } catch (error) {
-    console.error('❌ Error:', {
-      message: error.message,
-      status: error.response?.status,
-    });
+    console.error('❌ Assist error:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -99,47 +91,55 @@ export const clearHistory = async () => {
   return res.data;
 };
 
-const uriToBlob = async (uri) => {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.onerror = reject;
-    xhr.onload = () => {
-      resolve(xhr.response);
-    };
-    xhr.responseType = 'blob';
-    xhr.open('GET', uri, true);
-    xhr.send(null);
-  });
-};
-
+// ✅ FINAL robust upload function
 export const uploadUltrasound = async (imageUri) => {
   try {
     console.log('📤 Starting upload...');
-    console.log('Token present:', authToken ? 'YES ✓' : 'NO ✗');
-    console.log('Auth header in uploadApi:', uploadApi.defaults.headers.common['Authorization'] ? 'YES ✓' : 'NO ✗');
-    
-    console.log('Converting image to blob...');
-    const imageBlob = await uriToBlob(imageUri);
-    console.log('✅ Blob created:', imageBlob.size, 'bytes');
-    
+    console.log('Token:', authToken ? 'YES' : 'NO');
+
     const formData = new FormData();
+
     const filename = imageUri.split('/').pop() || 'ultrasound.jpg';
-    
-    formData.append('image', imageBlob, filename);
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1]}` : `image/jpeg`;
 
-    console.log('📦 FormData prepared with blob');
+    if (Platform.OS === 'web') {
+      // Web requires actual file fetch
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
 
-    const res = await uploadApi.post('/predict', formData);
+      formData.append('image', blob, filename);
+    } else {
+      // Mobile (APK / Emulator)
+      formData.append('image', {
+        uri: imageUri,
+        name: filename,
+        type,
+      });
+    }
 
-    console.log('✅ Upload successful!');
+    console.log('📦 FormData ready:', {
+      name: filename,
+      type,
+      platform: Platform.OS,
+    });
+
+    const res = await uploadApi.post('/predict', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    console.log('✅ Upload success:', res.data);
     return res.data;
 
   } catch (error) {
-    console.error('❌ Upload error:', {
+    console.error('❌ Upload error FULL:', {
+      message: error.message,
       status: error.response?.status,
-      message: error.response?.data?.message || error.message,
-      headers: error.config?.headers?.Authorization ? 'Present' : 'MISSING',
+      data: error.response?.data,
     });
+
     throw error;
   }
 };
